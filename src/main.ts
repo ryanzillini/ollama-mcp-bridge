@@ -46,9 +46,9 @@ async function main() {
 
     // Create bridge config with all MCPs
     const bridgeConfig: BridgeConfig = {
-      mcpServer: configFile.mcpServers.filesystem,  // Primary MCP
-      mcpServerName: 'filesystem',
-      mcpServers: configFile.mcpServers,           // All MCPs including Flux
+      mcpServer: configFile.mcpServers['fhir-mcp'],  // Primary MCP
+      mcpServerName: 'fhir-mcp',
+      mcpServers: configFile.mcpServers,        // All MCPs including Flux
       llmConfig: configFile.llm!,
       systemPrompt: configFile.systemPrompt
     };

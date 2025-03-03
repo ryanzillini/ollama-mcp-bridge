@@ -16,6 +16,7 @@ export interface BridgeConfigFile {
     maxTokens?: number;
   };
   systemPrompt?: string;
+  disableDefaultMcps?: boolean;
 }
 
 const DEFAULT_CONFIG: BridgeConfigFile = {
@@ -50,6 +51,22 @@ export async function loadBridgeConfig(): Promise<BridgeConfigFile> {
     const configData = await fs.readFile(configPath, 'utf-8');
     const config = JSON.parse(configData);
     logger.info(`Loaded bridge configuration from ${configPath}`);
+
+    // Check if default MCPs should be disabled
+    if (config.disableDefaultMcps) {
+      logger.info('Default MCP servers disabled by configuration');
+      return {
+        ...DEFAULT_CONFIG,
+        ...config,
+        mcpServers: {
+          ...config.mcpServers
+        },
+        llm: {
+          ...DEFAULT_CONFIG.llm,
+          ...config.llm
+        }
+      };
+    }
 
     return {
       ...DEFAULT_CONFIG,
