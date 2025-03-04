@@ -1,12 +1,8 @@
 import { MCPClient } from './mcp-client';
 import { LLMClient } from './llm-client';
 import { logger } from './logger';
-import { BridgeConfig, Tool, ServerParameters } from './types';
+import { BridgeConfig, Tool } from './types';
 import { DynamicToolRegistry } from './tool-registry';
-
-interface MCPMap {
-  [key: string]: MCPClient;
-}
 
 export interface MCPLLMBridge {
   tools: any[];
@@ -18,53 +14,39 @@ export interface MCPLLMBridge {
 }
 
 export class MCPLLMBridge implements MCPLLMBridge {
-  private config: BridgeConfig;
-  private mcpClients: MCPMap = {};
-  private toolToMcp: { [toolName: string]: MCPClient } = {};
+  private mcpClient: MCPClient;
   private toolRegistry: DynamicToolRegistry;
   public llmClient: LLMClient;
   public tools: any[] = [];
 
   constructor(private bridgeConfig: BridgeConfig) {
-    this.config = bridgeConfig;
-    // Primary MCP client
-    this.mcpClients['primary'] = new MCPClient(bridgeConfig.mcpServer);
+    if (!bridgeConfig.mcpServers?.fhir) {
+      throw new Error('FHIR MCP server configuration is required');
+    }
+    // Initialize FHIR MCP client
+    this.mcpClient = new MCPClient(bridgeConfig.mcpServers.fhir);
     this.llmClient = new LLMClient(bridgeConfig.llmConfig);
     this.toolRegistry = new DynamicToolRegistry();
-
-    // Initialize other MCP clients if available
-    if (bridgeConfig.mcpServers) {
-      Object.entries(bridgeConfig.mcpServers).forEach(([name, config]) => {
-        if (name !== bridgeConfig.mcpServerName) { // Skip primary as it's already initialized
-          this.mcpClients[name] = new MCPClient(config);
-        }
-      });
-    }
   }
 
   async initialize(): Promise<boolean> {
     try {
-      logger.info('Connecting to MCP servers...');
+      logger.info('Connecting to FHIR MCP server...');
       
-      // Initialize all MCP clients
-      for (const [name, client] of Object.entries(this.mcpClients)) {
-        logger.info(`Connecting to MCP: ${name}`);
-        await client.connect();
-        
-        const mcpTools = await client.getAvailableTools();
-        logger.info(`Received ${mcpTools.length} tools from ${name}`);
-        
-        // Register tools and map them to this MCP
-        mcpTools.forEach(tool => {
-          this.toolRegistry.registerTool(tool);
-          this.toolToMcp[tool.name] = client;
-          logger.debug(`Registered tool ${tool.name} from ${name}`);
-        });
+      await this.mcpClient.connect();
+      
+      const mcpTools = await this.mcpClient.getAvailableTools();
+      logger.info(`Received ${mcpTools.length} tools from FHIR MCP`);
+      
+      // Register tools
+      mcpTools.forEach(tool => {
+        this.toolRegistry.registerTool(tool);
+        logger.debug(`Registered tool ${tool.name}`);
+      });
 
-        // Convert and add to tools list
-        const convertedTools = this.convertMCPToolsToOpenAIFormat(mcpTools);
-        this.tools.push(...convertedTools);
-      }
+      // Convert and add to tools list
+      const convertedTools = this.convertMCPToolsToOpenAIFormat(mcpTools);
+      this.tools.push(...convertedTools);
 
       // Set tools in LLM client
       this.llmClient.tools = this.tools;
@@ -140,17 +122,11 @@ export class MCPLLMBridge implements MCPLLMBridge {
         const requestedName = toolCall.function.name;
         logger.debug(`[MCP] Looking up tool name: ${requestedName}`);
 
-        // Get appropriate MCP client for this tool
-        const mcpClient = this.toolToMcp[requestedName];
-        if (!mcpClient) {
-          throw new Error(`No MCP found for tool: ${requestedName}`);
-        }
-
         logger.info(`[MCP] About to call MCP tool: ${requestedName}`);
         let toolArgs = JSON.parse(toolCall.function.arguments);
         logger.info(`[MCP] Tool arguments prepared: ${JSON.stringify(toolArgs)}`);
         
-        const mcpCallPromise = mcpClient.callTool(requestedName, toolArgs);
+        const mcpCallPromise = this.mcpClient.callTool(requestedName, toolArgs);
         const timeoutPromise = new Promise((_, reject) => {
           setTimeout(() => reject(new Error('MCP call timed out after 30 seconds')), 30000);
         });
@@ -194,8 +170,6 @@ export class MCPLLMBridge implements MCPLLMBridge {
   }
 
   async close(): Promise<void> {
-    for (const client of Object.values(this.mcpClients)) {
-      await client.close();
-    }
+    await this.mcpClient.close();
   }
 }

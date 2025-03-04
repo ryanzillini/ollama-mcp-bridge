@@ -1,58 +1,18 @@
 {
   "mcpServers": {
-    "filesystem": {
-      "command": "C:\\Program Files\\nodejs\\node.exe",
-      "args": [
-        "C:\\Users\\patru\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-filesystem\\dist\\index.js",
-        "C:\\Users\\patru\\anthropicFun"
-      ]
-    },
-    "memory": {
-      "command": "C:\\Program Files\\nodejs\\node.exe",
-      "args": [
-        "C:\\Users\\patru\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-memory\\dist\\index.js"
-      ]
-    },
-    "brave-search": {
-      "command": "C:\\Program Files\\nodejs\\node.exe",
-      "args": [
-        "C:\\Users\\patru\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-brave-search\\dist\\index.js"
-      ],
+    "fhir": {
+      "command": "node",
+      "args": ["./src/fhir-mcp/dist/index.js"],
       "env": {
-        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+        "FHIR_API_BASE": "https://d1e49254f6d1.ngrok.app",
+        "FHIR_AUTH_TOKEN": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmdWxsX25hbWUiOiJSeWFuIFppbGxpbmkiLCJwaWN0dXJlIjoiIiwiZW1haWwiOiIiLCJyb2xlIjoidXNlciIsImlzcyI6ImRvY2tlci1mYXN0ZW5oZWFsdGgiLCJzdWIiOiJyejIyNCIsImV4cCI6MTc0MTA2MjE0OCwiaWF0IjoxNzQxMDU4NTQ4fQ.-Qf2E2Z5S9c4NnCN48AWB3lNJAmmmZS0gRnordILLcA"
       }
-    },
-    "github": {
-      "command": "C:\\Program Files\\nodejs\\node.exe",
-      "args": [
-        "C:\\Users\\patru\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-github\\dist\\index.js"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
-      }
-    },
-    "flux": {
-      "command": "C:\\Program Files\\nodejs\\node.exe",
-      "args": [
-        "C:\\Users\\patru\\AppData\\Roaming\\npm\\node_modules\\@patruff\\server-flux\\dist\\index.js"
-      ],
-      "env": {
-        "REPLICATE_API_TOKEN": "${REPLICATE_API_TOKEN}"
-      }
-    },
-    "gmail-drive": {
-      "command": "C:\\Program Files\\nodejs\\node.exe",
-      "args": [
-        "C:\\Users\\patru\\AppData\\Roaming\\npm\\node_modules\\@patruff\\server-gmail-drive\\dist\\index.js"
-      ]
     }
   },
   "llm": {
-    "model": "huihui_ai/qwen2.5-coder-abliterate",
-    "baseUrl": "http://localhost:11434",
-    "apiKey": "ollama",
-    "temperature": 0.7,
-    "maxTokens": 1000
+    "model": "llama3.2:3b",
+    "baseUrl": "http://z.tigerpanda.tv",
+    "stream": false
   },
-  "systemPrompt": "You are a helpful assistant that can use various tools to help answer questions. You have access to multiple MCPs including filesystem operations, GitHub interactions, Brave search, Gmail, Google Drive, and Flux for image generation. When using these tools, make sure to respect their specific requirements and limitations."
+  "systemPrompt": "You are a helpful assistant that can access and retrieve information from a FHIR server to answer user queries.  You are provided with a user authentication token.\n\n**User Input Format:**\n\nThe user input will be in two parts, separated by a newline character:\n\n1.  **Authentication Token:** The user's authentication token. This token MUST be used when making requests to the FHIR server.\n2.  **User Query:** The user's natural language question.\n\n**Instructions:**\n\n1.  **Extract:** Separate the authentication token (the first line) from the user query (the rest of the input).\n2.  **Analyze:** Determine if accessing the FHIR server is *necessary* to answer the user's question.\n    *   **If FHIR data is NOT needed:** Respond *directly* to the user's question with your general knowledge. Do *not* use the `fhirQuery` tool.\n    *   **If FHIR data IS needed:** Construct a FHIR Search API query and use the `fhirQuery` tool.\n3.  **FHIR Query (If Needed):**\n    *   Be as specific as possible. Use the correct FHIR resource type (e.g., `Observation`, `MedicationStatement`, `Condition`, `AllergyIntolerance`, `Patient`).\n    *   Include relevant search parameters (e.g., `patient`, `category`, `code`, `date`, `status`).\n    *   Assume the patient ID is 'example' unless the user specifies otherwise.\n    *   Use these category codes when appropriate:\n        *   Vital signs: `http://terminology.hl7.org/CodeSystem/observation-category%7Cvital-signs`\n        *   Lab results: `http://terminology.hl7.org/CodeSystem/observation-category%7Claboratory`\n        *   Social history: `http://terminology.hl7.org/CodeSystem/observation-category%7Csocial-history`\n\n4.  **Tool Use (If Needed):**\n    *   Use the `fhirQuery` tool with the following JSON format:\n\n        ```json\n        {\n          \"tool_name\": \"fhirQuery\",\n          \"arguments\": {\n            \"query\": \"[FHIR Search API query string]\",\n            \"auth_token\": \"[user's authentication token]\"\n          }\n        }\n        ```\n\n**Available Tools:**\n\n*   **`fhirQuery`:**\n    *   `description`: Queries a FHIR server to retrieve patient information.  Requires an authentication token.\n    *   `parameters`:\n        *   `query`: (string, required) The FHIR Search API query string.\n        *   `auth_token`: (string, required) The user's authentication token.\n\n**Examples:**\n\n**Example 1 (No FHIR Data Needed):**\n\n*Input:*\n```text\nmy_auth_token\nWhat is the capital of Spain?\n```"
 }

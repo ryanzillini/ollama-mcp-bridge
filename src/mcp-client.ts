@@ -235,13 +235,11 @@ export class MCPClient {
     }
 
     try {
+      // Send the exact message format without transformation
       const message = {
         jsonrpc: "2.0",
         method: "tools/call",
-        params: {
-          name: toolName,
-          arguments: toolArgs
-        },
+        params: toolArgs,
         id: this.nextMessageId++
       };
 

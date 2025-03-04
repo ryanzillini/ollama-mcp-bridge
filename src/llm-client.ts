@@ -220,12 +220,14 @@ export class LLMClient {
               this.messages.push({
                 role: 'tool',
                 content,
+                name: result.tool_call_id,
                 tool_call_id: result.tool_call_id
               });
             } else {
               this.messages.push({
                 role: 'tool',
                 content: String(toolOutput),
+                name: result.tool_call_id,
                 tool_call_id: result.tool_call_id
               });
             }
@@ -234,6 +236,7 @@ export class LLMClient {
             this.messages.push({
               role: 'tool',
               content: String(toolOutput),
+              name: result.tool_call_id,
               tool_call_id: result.tool_call_id
             });
           }
@@ -245,35 +248,51 @@ export class LLMClient {
         model: this.config.model,
         messages,
         stream: false,
+        format: {
+          type: "object",
+          properties: {
+            from: { 
+              type: "string",
+              enum: [
+                "MedicationRequest",
+                "Observation",
+                "Patient",
+                "Condition",
+                "Procedure",
+                "AllergyIntolerance"
+              ],
+              description: "Must be one of the valid FHIR resource types"
+            },
+            where: {
+              type: "object",
+              properties: {
+                status: {
+                  type: "string",
+                  enum: ["active", "completed", "entered-in-error", "intended", "stopped", "on-hold", "unknown", "not-taken"]
+                }
+              },
+              required: ["status"],
+              if: {
+                properties: { from: { const: "MedicationRequest" } }
+              },
+              then: {
+                properties: {
+                  status: { const: "active" }
+                }
+              },
+              additionalProperties: {
+                type: "string",
+                pattern: "^[^http://][^https://].*$"
+              }
+            }
+          },
+          required: ["from", "where"]
+        },
         options: {
-          temperature: this.config.temperature || 0,
+          temperature: 0,  // Set to 0 for most deterministic output
           num_predict: this.config.maxTokens || 1000
         }
       };
-
-      // Add structured output format if a tool is detected
-      if (this.currentTool) {
-        const toolSchema = this.currentTool ? this.toolSchemas[this.currentTool as keyof typeof toolSchemas] : null;
-        if (toolSchema) {
-          payload.format = {
-            type: "object",
-            properties: {
-              name: {
-                type: "string",
-                const: this.currentTool
-              },
-              arguments: toolSchema,
-              thoughts: {
-                type: "string",
-                description: "Your thoughts about using this tool"
-              }
-            },
-            required: ["name", "arguments", "thoughts"]
-          };
-          logger.debug('Added format schema for tool:', this.currentTool);
-          logger.debug('Schema:', JSON.stringify(payload.format, null, 2));
-        }
-      }
 
       logger.debug('Preparing Ollama request with payload:', JSON.stringify(payload, null, 2));
       
@@ -318,18 +337,55 @@ export class LLMClient {
         // Handle both string and object responses
         const contentObj = typeof content === 'string' ? JSON.parse(content) : content;
         
-        // Check if response matches our structured format
-        if (contentObj.name && contentObj.arguments) {
+        // Check if response matches our format
+        if (contentObj.from && contentObj.where) {
+          // Validate FHIR resource type
+          const validResourceTypes = [
+            "MedicationRequest",
+            "Observation",
+            "Patient",
+            "Condition",
+            "Procedure",
+            "AllergyIntolerance"
+          ];
+          
+          if (!validResourceTypes.includes(contentObj.from)) {
+            logger.error('Invalid FHIR resource type:', contentObj.from);
+            throw new Error('Invalid FHIR resource type');
+          }
+
+          // Convert to FHIR query format
+          const queryParams = new URLSearchParams();
+          Object.entries(contentObj.where).forEach(([key, value]) => {
+            // Prevent any full URLs from being included
+            if (typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'))) {
+              logger.error('Invalid parameter value - URL detected:', value);
+              throw new Error('Invalid parameter value - URL detected');
+            }
+            queryParams.append(key, value as string);
+          });
+          
           isToolCall = true;
           toolCalls = [{
             id: `call-${Date.now()}`,
             function: {
-              name: contentObj.name,
-              arguments: JSON.stringify(contentObj.arguments)
+              name: "query-fhir",
+              arguments: JSON.stringify({
+                searchParams: {
+                  from: contentObj.from,
+                  where: {
+                    ...contentObj.where,
+                    status: contentObj.from === "MedicationRequest" ? "active" : contentObj.where.status
+                  }
+                },
+                authToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmdWxsX25hbWUiOiJSeWFuIFppbGxpbmkiLCJwaWN0dXJlIjoiIiwiZW1haWwiOiIiLCJyb2xlIjoidXNlciIsImlzcyI6ImRvY2tlci1mYXN0ZW5oZWFsdGgiLCJzdWIiOiJyejIyNCIsImV4cCI6MTc0MTA2MjE0OCwiaWF0IjoxNzQxMDU4NTQ4fQ.-Qf2E2Z5S9c4NnCN48AWB3lNJAmmmZS0gRnordILLcA"
+              })
             }
           }];
-          content = contentObj.thoughts || "Using tool...";
+          content = "Using tool...";
           logger.debug('Parsed structured tool call:', { toolCalls });
+        } else {
+          logger.debug('Response does not match expected format:', contentObj);
         }
       } catch (e) {
         logger.debug('Response is not a structured tool call:', e);

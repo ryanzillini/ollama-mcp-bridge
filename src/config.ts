@@ -1,6 +1,5 @@
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
 import { logger } from './logger';
 import { ServerParameters } from './types';
 
@@ -11,38 +10,31 @@ export interface BridgeConfigFile {
   llm?: {
     model: string;
     baseUrl: string;
-    apiKey?: string;
-    temperature?: number;
-    maxTokens?: number;
+    stream: boolean;
   };
   systemPrompt?: string;
 }
 
 const DEFAULT_CONFIG: BridgeConfigFile = {
   mcpServers: {
-    filesystem: {
-      command: process.platform === 'win32' 
-        ? 'C:\\Program Files\\nodejs\\node.exe'
-        : 'node',
-      args: [
-        path.join(os.homedir(), 'node_modules', '@modelcontextprotocol', 'server-filesystem', 'dist', 'index.js'),
-        path.join(os.homedir(), 'bridgeworkspace')
-      ],
-      allowedDirectory: path.join(os.homedir(), 'bridgeworkspace')
+    fhir: {
+      command: "node",
+      args: ["./src/fhir-mcp/dist/index.js"],
+      env: {
+        "FHIR_API_BASE": "https://d1e49254f6d1.ngrok.app",
+        "FHIR_AUTH_TOKEN": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmdWxsX25hbWUiOiJSeWFuIFppbGxpbmkiLCJwaWN0dXJlIjoiIiwiZW1haWwiOiIiLCJyb2xlIjoidXNlciIsImlzcyI6ImRvY2tlci1mYXN0ZW5oZWFsdGgiLCJzdWIiOiJyejIyNCIsImV4cCI6MTc0MTA2MjE0OCwiaWF0IjoxNzQxMDU4NTQ4fQ.-Qf2E2Z5S9c4NnCN48AWB3lNJAmmmZS0gRnordILLcA"
+      }
     }
   },
   llm: {
-    model: "qwen2.5-coder:7b-instruct",
-    baseUrl: "http://localhost:11434/v1",
-    apiKey: "ollama",
-    temperature: 0.7,
-    maxTokens: 1000
+    model: "llama3.2:8b",
+    baseUrl: "http://z.tigerpanda.tv",
+    stream: false
   },
-  systemPrompt: "You are a helpful assistant that can use tools to help answer questions."
+  systemPrompt: "You are an AI assistant that translates natural language requests into structured JSON queries for retrieving healthcare data from FHIR resources.\n\nYou MUST respond with ONLY a valid JSON object in this EXACT format:\n{\n  \"from\": \"[RESOURCE_TYPE]\",\n  \"where\": {\n    \"key1\": \"value1\",\n    \"key2\": \"value2\"\n  }\n}\n\nValid FHIR Resource Types:\n- MedicationRequest (for medications)\n- Observation (for vital signs and lab results)\n- Patient (for demographics)\n- Condition (for diagnoses)\n- Procedure (for procedures)\n- AllergyIntolerance (for allergies)\n\nCritical Rules:\n1. The response MUST be a single valid JSON object\n2. NO additional text before or after the JSON\n3. The \"from\" value MUST be one of the valid FHIR resource types listed above\n4. The \"where\" object MUST contain valid FHIR search parameters\n5. ALWAYS include \"patient\": \"example\" in the where clause\n6. NEVER include full URLs in parameter values\n7. NEVER try to access external websites\n\nExamples:\n\n1. Active Medications:\n{\n  \"from\": \"MedicationRequest\",\n  \"where\": {\n    \"patient\": \"example\",\n    \"status\": \"active\"\n  }\n}\n\n2. Vital Signs:\n{\n  \"from\": \"Observation\",\n  \"where\": {\n    \"patient\": \"example\",\n    \"category\": \"vital-signs\"\n  }\n}\n\n3. Patient Demographics:\n{\n  \"from\": \"Patient\",\n  \"where\": {\n    \"id\": \"example\"\n  }\n}"
 };
 
 export async function loadBridgeConfig(): Promise<BridgeConfigFile> {
-  // Change to look for config in the project directory
   const projectDir = path.resolve(__dirname, '..');
   const configPath = path.join(projectDir, 'bridge_config.json');
   
